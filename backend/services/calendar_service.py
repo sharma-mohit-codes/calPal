@@ -4,130 +4,108 @@ from datetime import datetime, timedelta
 import pytz
 
 class CalendarService:
-    def __init__(self, credentials_dict: dict):
-        """
-        Initialize with user's OAuth credentials
-        """
+    def __init__(self, creds_dict: dict):
         creds = Credentials(
-            token=credentials_dict.get('token'),
-            refresh_token=credentials_dict.get('refresh_token'),
-            token_uri=credentials_dict.get('token_uri'),
-            client_id=credentials_dict.get('client_id'),
-            client_secret=credentials_dict.get('client_secret'),
-            scopes=credentials_dict.get('scopes')
+            token=creds_dict.get('token'),
+            refresh_token=creds_dict.get('refresh_token'),
+            token_uri=creds_dict.get('token_uri'),
+            client_id=creds_dict.get('client_id'),
+            client_secret=creds_dict.get('client_secret'),
+            scopes=creds_dict.get('scopes')
         )
         self.service = build('calendar', 'v3', credentials=creds)
+        self.tz = pytz.timezone('Asia/Kolkata')
     
-    def parse_datetime(self, date_str: str, time_str: str = None) -> datetime:
-        """
-        Convert date/time strings to datetime object
-        """
-        today = datetime.now()
+    def parse_dt(self, date_str: str, time_str: str = None) -> datetime:
+        """Parse date/time to datetime object"""
+        now = datetime.now(self.tz)
         
-        # Handle relative dates
-        if date_str.lower() == "today":
-            date_obj = today
-        elif date_str.lower() == "tomorrow":
-            date_obj = today + timedelta(days=1)
+        dl = date_str.lower()
+        if dl == "today":
+            dt = now
+        elif dl == "tomorrow":
+            dt = now + timedelta(days=1)
         else:
-            # Parse YYYY-MM-DD format
-            date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+            try:
+                dt = self.tz.localize(datetime.strptime(date_str, "%Y-%m-%d"))
+            except:
+                dt = now
         
-        # Add time if provided
         if time_str:
-            time_obj = datetime.strptime(time_str, "%H:%M").time()
-            date_obj = datetime.combine(date_obj.date(), time_obj)
+            try:
+                t = datetime.strptime(time_str, "%H:%M").time()
+                dt = self.tz.localize(datetime.combine(dt.date(), t))
+            except:
+                pass
         
-        return date_obj
+        return dt
     
-    def create_event(self, title: str, date: str, time: str, duration_minutes: int = 60) -> dict:
-        """
-        Create a new calendar event
-        """
-        start_time = self.parse_datetime(date, time)
-        end_time = start_time + timedelta(minutes=duration_minutes)
+    def format_time(self, event: dict) -> str:
+        """Format event time for display"""
+        start = event['start'].get('dateTime', event['start'].get('date'))
+        try:
+            dt = datetime.fromisoformat(start.replace('Z', '+00:00'))
+            if dt.date() == datetime.now().date():
+                return f"Today {dt.strftime('%I:%M %p')}"
+            elif dt.date() == (datetime.now() + timedelta(days=1)).date():
+                return f"Tomorrow {dt.strftime('%I:%M %p')}"
+            return dt.strftime('%b %d, %I:%M %p')
+        except:
+            return start
+    
+    def create_event(self, title: str, date: str, time: str, duration: int = 60) -> dict:
+        start = self.parse_dt(date, time)
+        end = start + timedelta(minutes=duration)
         
         event = {
             'summary': title,
-            'start': {
-                'dateTime': start_time.isoformat(),
-                'timeZone': 'Asia/Kolkata',
-            },
-            'end': {
-                'dateTime': end_time.isoformat(),
-                'timeZone': 'Asia/Kolkata',
-            },
+            'start': {'dateTime': start.isoformat(), 'timeZone': 'Asia/Kolkata'},
+            'end': {'dateTime': end.isoformat(), 'timeZone': 'Asia/Kolkata'}
         }
-        
-        created_event = self.service.events().insert(
-            calendarId='primary',
-            body=event
-        ).execute()
-        
-        return created_event
+        return self.service.events().insert(calendarId='primary', body=event).execute()
     
     def list_events(self, max_results: int = 10) -> list:
-        """
-        List upcoming events
-        """
         now = datetime.utcnow().isoformat() + 'Z'
-        
-        events_result = self.service.events().list(
-            calendarId='primary',
-            timeMin=now,
-            maxResults=max_results,
-            singleEvents=True,
-            orderBy='startTime'
+        result = self.service.events().list(
+            calendarId='primary', timeMin=now, maxResults=max_results,
+            singleEvents=True, orderBy='startTime'
         ).execute()
-        
-        return events_result.get('items', [])
+        return result.get('items', [])
     
-    def find_event_by_title(self, title: str) -> dict:
-        """
-        Find event by title (fuzzy match)
-        """
-        events = self.list_events(max_results=50)
+    def find_event(self, title: str) -> dict:
+        from difflib import SequenceMatcher
+        events = self.list_events(50)
         
-        # Simple fuzzy matching
-        title_lower = title.lower()
-        for event in events:
-            event_title = event.get('summary', '').lower()
-            if title_lower in event_title or event_title in title_lower:
-                return event
+        best = None
+        score = 0.3
+        tl = title.lower()
         
-        return None
+        for e in events:
+            et = e.get('summary', '').lower()
+            s = SequenceMatcher(None, tl, et).ratio()
+            if tl in et or et in tl:
+                s += 0.4
+            if s > score:
+                score, best = s, e
+        
+        return best
     
     def update_event(self, event_id: str, new_date: str = None, new_time: str = None) -> dict:
-        """
-        Update an existing event
-        """
         event = self.service.events().get(calendarId='primary', eventId=event_id).execute()
         
         if new_date or new_time:
-            current_start = datetime.fromisoformat(event['start']['dateTime'].replace('Z', '+00:00'))
+            curr = datetime.fromisoformat(event['start']['dateTime'])
+            new_dt = self.parse_dt(
+                new_date or curr.strftime("%Y-%m-%d"),
+                new_time or curr.strftime("%H:%M")
+            )
             
-            if new_date:
-                new_dt = self.parse_datetime(new_date, new_time or current_start.strftime("%H:%M"))
-            else:
-                new_dt = self.parse_datetime(current_start.strftime("%Y-%m-%d"), new_time)
-            
-            duration = datetime.fromisoformat(event['end']['dateTime'].replace('Z', '+00:00')) - current_start
-            end_dt = new_dt + duration
-            
+            dur = datetime.fromisoformat(event['end']['dateTime']) - curr
             event['start']['dateTime'] = new_dt.isoformat()
-            event['end']['dateTime'] = end_dt.isoformat()
+            event['end']['dateTime'] = (new_dt + dur).isoformat()
         
-        updated_event = self.service.events().update(
-            calendarId='primary',
-            eventId=event_id,
-            body=event
-        ).execute()
-        
-        return updated_event
+        return self.service.events().update(calendarId='primary', eventId=event_id, body=event).execute()
     
     def delete_event(self, event_id: str) -> bool:
-        """
-        Delete an event
-        """
         self.service.events().delete(calendarId='primary', eventId=event_id).execute()
         return True

@@ -2,126 +2,78 @@ from datetime import datetime, timedelta
 import re
 
 class DateParser:
-    """
-    Advanced date parsing utility
-    """
+    """Advanced date/time parser"""
     
     @staticmethod
-    def parse_relative_date(date_str: str) -> datetime:
-        """
-        Parse relative dates like 'today', 'tomorrow', 'next monday', etc.
-        """
-        date_str = date_str.lower().strip()
-        today = datetime.now()
+    def parse_relative(date_str: str) -> datetime:
+        """Parse relative dates like 'today', 'tomorrow', 'next monday'"""
+        ds = date_str.lower().strip()
+        now = datetime.now()
         
-        # Handle today/tomorrow
-        if date_str == "today":
-            return today
-        elif date_str == "tomorrow":
-            return today + timedelta(days=1)
-        elif date_str == "day after tomorrow":
-            return today + timedelta(days=2)
-        elif date_str == "yesterday":
-            return today - timedelta(days=1)
+        if ds == "today": return now
+        if ds == "tomorrow": return now + timedelta(days=1)
+        if ds == "yesterday": return now - timedelta(days=1)
+        if "next week" in ds: return now + timedelta(weeks=1)
         
-        # Handle "next week"
-        if "next week" in date_str:
-            return today + timedelta(weeks=1)
+        # Weekdays
+        weekdays = {'monday':0, 'tuesday':1, 'wednesday':2, 'thursday':3, 
+                   'friday':4, 'saturday':5, 'sunday':6}
         
-        # Handle "next [weekday]"
-        weekdays = {
-            'monday': 0, 'mon': 0,
-            'tuesday': 1, 'tue': 1,
-            'wednesday': 2, 'wed': 2,
-            'thursday': 3, 'thu': 3,
-            'friday': 4, 'fri': 4,
-            'saturday': 5, 'sat': 5,
-            'sunday': 6, 'sun': 6
-        }
-        
-        for day_name, day_num in weekdays.items():
-            if day_name in date_str:
-                days_ahead = day_num - today.weekday()
-                if days_ahead <= 0:  # Target day already happened this week
+        for day, num in weekdays.items():
+            if day in ds:
+                days_ahead = num - now.weekday()
+                if days_ahead <= 0:
                     days_ahead += 7
-                return today + timedelta(days=days_ahead)
+                return now + timedelta(days=days_ahead)
         
-        # Handle "in X days"
-        match = re.search(r'in (\d+) days?', date_str)
-        if match:
-            days = int(match.group(1))
-            return today + timedelta(days=days)
+        # "in X days"
+        m = re.search(r'in (\d+) days?', ds)
+        if m:
+            return now + timedelta(days=int(m.group(1)))
         
-        # Handle "X days from now"
-        match = re.search(r'(\d+) days? from now', date_str)
-        if match:
-            days = int(match.group(1))
-            return today + timedelta(days=days)
-        
-        # Default to today if can't parse
-        return today
+        return now
     
     @staticmethod
     def parse_time(time_str: str) -> str:
-        """
-        Parse various time formats to HH:MM (24-hour)
-        """
-        time_str = time_str.lower().strip()
+        """Parse time to HH:MM format"""
+        ts = time_str.lower().strip()
         
-        # Handle 12-hour format with am/pm
-        match = re.search(r'(\d{1,2})(?::(\d{2}))?\s*(am|pm)', time_str)
-        if match:
-            hour = int(match.group(1))
-            minute = int(match.group(2)) if match.group(2) else 0
-            meridiem = match.group(3)
+        # 12-hour with am/pm
+        m = re.search(r'(\d{1,2})(?::(\d{2}))?\s*(am|pm)', ts)
+        if m:
+            h = int(m.group(1))
+            min = int(m.group(2)) if m.group(2) else 0
+            ap = m.group(3)
             
-            if meridiem == 'pm' and hour != 12:
-                hour += 12
-            elif meridiem == 'am' and hour == 12:
-                hour = 0
-            
-            return f"{hour:02d}:{minute:02d}"
+            if ap == 'pm' and h != 12: h += 12
+            if ap == 'am' and h == 12: h = 0
+            return f"{h:02d}:{min:02d}"
         
-        # Handle 24-hour format
-        match = re.search(r'(\d{1,2}):(\d{2})', time_str)
-        if match:
-            hour = int(match.group(1))
-            minute = int(match.group(2))
-            return f"{hour:02d}:{minute:02d}"
+        # 24-hour
+        m = re.search(r'(\d{1,2}):(\d{2})', ts)
+        if m:
+            return f"{int(m.group(1)):02d}:{int(m.group(2)):02d}"
         
-        # Handle just hour (assume :00)
-        match = re.search(r'(\d{1,2})', time_str)
-        if match:
-            hour = int(match.group(1))
-            # If hour > 12, assume 24-hour format, else assume PM for common times
-            if hour > 12:
-                return f"{hour:02d}:00"
-            else:
-                # Default afternoon times (9-5 workday)
-                return f"{hour:02d}:00"
+        # Just hour
+        m = re.search(r'(\d{1,2})', ts)
+        if m:
+            return f"{int(m.group(1)):02d}:00"
         
-        # Default to 9 AM
         return "09:00"
     
     @staticmethod
     def extract_duration(text: str) -> int:
-        """
-        Extract duration from text in minutes
-        """
-        # Check for explicit duration mentions
+        """Extract duration in minutes"""
         patterns = [
             (r'(\d+)\s*hours?', 60),
             (r'(\d+)\s*hrs?', 60),
-            (r'(\d+)\s*h', 60),
             (r'(\d+)\s*minutes?', 1),
-            (r'(\d+)\s*mins?', 1),
-            (r'(\d+)\s*m(?!o)', 1),  # m but not 'mo' (month)
+            (r'(\d+)\s*mins?', 1)
         ]
         
-        for pattern, multiplier in patterns:
-            match = re.search(pattern, text.lower())
-            if match:
-                return int(match.group(1)) * multiplier
+        for pattern, mult in patterns:
+            m = re.search(pattern, text.lower())
+            if m:
+                return int(m.group(1)) * mult
         
-        # Default 1 hour
         return 60
