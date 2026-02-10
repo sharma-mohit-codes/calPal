@@ -1,5 +1,5 @@
 # CalPal 🗓️🤖  
-AI-Powered Google Calendar Assistant
+**AI-Powered Google Calendar Assistant**
 
 CalPal is a GenAI-based calendar assistant that lets users manage their Google Calendar using simple natural language prompts instead of manual clicks.
 
@@ -9,9 +9,9 @@ CalPal is a GenAI-based calendar assistant that lets users manage their Google C
 
 Users can type requests like:
 
-- "Schedule a meeting tomorrow at 5 PM"
-- "Show my events for Friday"
-- "Delete my 3 PM call"
+- “Schedule a meeting tomorrow at 5 PM”  
+- “Show my today's upcoming events”  
+- “Delete my 3 PM call”  
 
 CalPal understands the request and performs the action automatically on Google Calendar.
 
@@ -19,23 +19,24 @@ CalPal understands the request and performs the action automatically on Google C
 
 ## 🧠 Tech Stack
 
-**Frontend**  
-- React  
+### Frontend
+- React (Vite)
 
-**Backend**  
+### Backend
 - Python  
 - FastAPI  
 
-**AI Layer**  
-- Gemini API (Prompt → Structured command)
+### AI Layer
+- Groq API  
+- LLaMA-3 model (natural language → structured intent)
 
-**Authentication**  
+### Authentication
 - Google OAuth  
 
-**Database**  
+### Database
 - MongoDB  
 
-**Calendar Integration**  
+### Calendar Integration
 - Google Calendar API  
 
 ---
@@ -44,8 +45,8 @@ CalPal understands the request and performs the action automatically on Google C
 
 1. User logs in with Google  
 2. User enters a natural language prompt  
-3. AI converts prompt into a structured command  
-4. Backend processes date, time, and intent  
+3. Groq LLM extracts **intent** and **event title**  
+4. Backend NLP layer extracts **date, time, duration**  
 5. Google Calendar API executes the action  
 6. Confirmation is displayed in chat  
 
@@ -59,4 +60,5 @@ To make calendar management fast, conversational, and accessible using AI.
 
 ## 📌 Status
 
-Project setup in progress 🚧
+Core features working locally ✅  
+Improving prompt understanding & event matching 🔧
