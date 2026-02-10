@@ -4,7 +4,6 @@ from functools import lru_cache
 import os
 from pathlib import Path
 
-# Get the backend directory path
 BACKEND_DIR = Path(__file__).resolve().parent
 ENV_FILE = BACKEND_DIR / ".env"
 
@@ -14,8 +13,8 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_SECRET: str = Field(default="")
     GOOGLE_REDIRECT_URI: str = Field(default="http://localhost:8000/auth/callback")
     
-    # Gemini API
-    GEMINI_API_KEY: str = Field(default="")
+    # Groq API (replacing Gemini)
+    GROQ_API_KEY: str = Field(default="")
     
     # MongoDB
     MONGODB_URI: str = Field(default="mongodb://localhost:27017/")
