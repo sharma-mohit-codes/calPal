@@ -16,13 +16,6 @@ users_collection = db['users']
 @router.post("/message")
 async def process_message(chat_msg: ChatMessage):
     try:
-        # TEMPORARY: Guest mode handler - DELETE LATER
-        if chat_msg.user_id == 'guest@calpal.local':
-            return {
-                "success": False,
-                "message": "🔒 Guest mode: Please sign in with Google to use calendar features"
-            }
-        # END TEMPORARY
         
         user = users_collection.find_one({'email': chat_msg.user_id})
         if not user:

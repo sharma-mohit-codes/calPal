@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { chatService } from '../services/api';
 import Message from './Message';
 
-const ChatInterface = ({ userEmail }) => {
+const ChatInterface = ({ userEmail, theme }) => {
   const [messages, setMessages] = useState([
     { text: '👋 Hi! I\'m calPal. Try: "Add team meeting tomorrow at 2pm"', isUser: false }
   ]);
@@ -24,14 +24,12 @@ const ChatInterface = ({ userEmail }) => {
     const userMessage = input.trim();
     setInput('');
     
-    // Add user message
     setMessages(prev => [...prev, { text: userMessage, isUser: true }]);
     setLoading(true);
 
     try {
       const response = await chatService.sendMessage(userMessage, userEmail);
       
-      // Add bot response
       setMessages(prev => [
         ...prev,
         { text: response.message, isUser: false }
@@ -58,7 +56,8 @@ const ChatInterface = ({ userEmail }) => {
     <div className="chat-container">
       <div className="chat-header">
         <h2>calPal 📅</h2>
-        <p className="user-email">{userEmail}</p>
+        <p className="user-email">
+        </p>
       </div>
 
       <div className="messages-container">
