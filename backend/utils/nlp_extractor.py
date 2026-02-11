@@ -15,52 +15,44 @@ class NLPExtractor:
     @staticmethod
     def extract_date(text: str):
         tl = text.lower()
-
-        # 🔥 Handle "tomorrow" and common misspellings
-        tomorrow_patterns = [
-            "tomorrow", "tommorow", "tmrw", "tmr", "tommorrow"
-        ]
-        for word in tomorrow_patterns:
-            if word in tl:
-                return (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
-
+        if "tomorrow" in tl:
+            return (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
         if "today" in tl:
             return datetime.now().strftime("%Y-%m-%d")
-
-        # Weekdays support
-        weekdays = {
-            'monday': 0, 'tuesday': 1, 'wednesday': 2,
-            'thursday': 3, 'friday': 4, 'saturday': 5, 'sunday': 6
-        }
-        for day, num in weekdays.items():
-            if day in tl:
-                today = datetime.now()
-                days_ahead = num - today.weekday()
-                if days_ahead <= 0:
-                    days_ahead += 7
-                return (today + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
-
         return None
 
     @staticmethod
     def extract_time(text: str):
         tl = text.lower()
 
-        # Time ranges first
-        range_match = re.search(r'from\s+(\d{1,2})[:.\-]?\d*\s*(am|pm)?', tl)
+        # Priority 1: Range start time "from 5 to 5:30 PM"
+        range_match = re.search(r'from\s+(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?', tl)
         if range_match:
             hour = int(range_match.group(1))
-            if range_match.group(2) == 'pm' and hour != 12:
-                hour += 12
-            return f"{hour:02d}:00"
+            minute = int(range_match.group(2) or 0)
+            meridiem = range_match.group(3)
+            
+            if meridiem:
+                if meridiem == 'pm' and hour != 12:
+                    hour += 12
+                elif meridiem == 'am' and hour == 12:
+                    hour = 0
+            
+            return f"{hour:02d}:{minute:02d}"
 
-        m = re.search(r'(\d{1,2})[:.]?(\d{2})?\s*(am|pm)', tl)
+        # Priority 2: Regular time "at 5 PM", "5:30 PM"
+        m = re.search(r'(\d{1,2})(?:[:.] ?(\d{2}))?\s*(am|pm)', tl)
         if m:
             h = int(m.group(1))
-            min = int(m.group(2) or 0)
-            if m.group(3) == 'pm' and h != 12: h += 12
-            if m.group(3) == 'am' and h == 12: h = 0
-            return f"{h:02d}:{min:02d}"
+            min_val = int(m.group(2) or 0)
+            meridiem = m.group(3)
+            
+            if meridiem == 'pm' and h != 12:
+                h += 12
+            elif meridiem == 'am' and h == 12:
+                h = 0
+            
+            return f"{h:02d}:{min_val:02d}"
 
         return None
 
@@ -68,16 +60,47 @@ class NLPExtractor:
     def extract_duration(text: str):
         tl = text.lower()
 
-        m = re.search(r'(\d+)\s*(minutes?|mins?)', tl)
-        if m: return int(m.group(1))
-
-        m = re.search(r'(\d+)\s*(hours?|hrs?)', tl)
-        if m: return int(m.group(1)) * 60
-
-        m = re.search(r'(\d{1,2})[:.]?(\d{2})?\s*(am|pm)?.*to\s*(\d{1,2})[:.]?(\d{2})', tl)
+        # Priority 1: Explicit hours "3 hours", "2 hrs"
+        m = re.search(r'(\d+)\s*(?:hours?|hrs?)', tl)
         if m:
-            sh, sm = int(m.group(1)), int(m.group(2) or 0)
-            eh, em = int(m.group(4)), int(m.group(5))
-            return max((eh*60+em) - (sh*60+sm), 60)
+            return int(m.group(1)) * 60
 
+        # Priority 2: Explicit minutes "30 min", "45 minutes"
+        m = re.search(r'(\d+)\s*(?:minutes?|mins?)', tl)
+        if m:
+            return int(m.group(1))
+
+        # Priority 3: "of X min/hour" pattern
+        m = re.search(r'of\s+(\d+)\s*(?:hours?|hrs?)', tl)
+        if m:
+            return int(m.group(1)) * 60
+        
+        m = re.search(r'of\s+(\d+)\s*(?:minutes?|mins?)', tl)
+        if m:
+            return int(m.group(1))
+
+        # Priority 4: Time range "from 5 to 5:30", "5 to 5:30 PM"
+        range_pattern = r'from\s+(\d{1,2})(?::(\d{2}))?\s*(?:am|pm)?\s+to\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?'
+        m = re.search(range_pattern, tl)
+        if m:
+            start_h = int(m.group(1))
+            start_m = int(m.group(2) or 0)
+            end_h = int(m.group(3))
+            end_m = int(m.group(4) or 0)
+            meridiem = m.group(5)
+            
+            # Handle PM times
+            if meridiem == 'pm':
+                if end_h != 12:
+                    end_h += 12
+                # If start hour is less and in same period, also PM
+                if start_h < 12 and start_h < (end_h - 12):
+                    start_h += 12
+            
+            duration = (end_h * 60 + end_m) - (start_h * 60 + start_m)
+            if duration > 0:
+                print(f"⏱️  Calculated duration from range: {duration}min")
+                return duration
+
+        # Default
         return 60

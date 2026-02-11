@@ -16,6 +16,14 @@ users_collection = db['users']
 @router.post("/message")
 async def process_message(chat_msg: ChatMessage):
     try:
+        # TEMPORARY: Guest mode handler - DELETE LATER
+        if chat_msg.user_id == 'guest@calpal.local':
+            return {
+                "success": False,
+                "message": "🔒 Guest mode: Please sign in with Google to use calendar features"
+            }
+        # END TEMPORARY
+        
         user = users_collection.find_one({'email': chat_msg.user_id})
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
@@ -61,14 +69,10 @@ async def process_message(chat_msg: ChatMessage):
             if not title:
                 return {"success": False, "message": "❌ Which event should I delete?"}
             
-            # Use date filter if provided
             date_filter = date if date and date != "today" else None
-            
-            # Search for event (with date filter)
             ev = cal.find_event(title, date_filter)
             
             if not ev:
-                # Try without date filter as fallback
                 if date_filter:
                     print("🔄 Trying without date filter...")
                     ev = cal.find_event(title, None)
@@ -92,12 +96,31 @@ async def process_message(chat_msg: ChatMessage):
                 if not ev:
                     return {"success": False, "message": f"❌ Couldn't find '{title}'"}
             
-            cal.update_event(ev['id'], date if date != "today" else None, time)
+            # Pass duration if it's not default (60)
+            new_duration = duration if duration != 60 else None
+            
+            cal.update_event(
+                ev['id'],
+                date if date and date != "today" else None,
+                time,
+                new_duration
+            )
+            
             msg = f"✅ Updated '{ev['summary']}'"
             if time:
                 msg += f" to {time}"
             if date and date != "today":
                 msg += f" on {date}"
+            if new_duration:
+                hours = new_duration // 60
+                mins = new_duration % 60
+                if hours > 0 and mins > 0:
+                    msg += f" (duration: {hours}h {mins}min)"
+                elif hours > 0:
+                    msg += f" (duration: {hours}h)"
+                else:
+                    msg += f" (duration: {mins}min)"
+            
             return {"success": True, "message": msg}
 
         elif action == 'list':
