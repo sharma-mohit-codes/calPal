@@ -56,9 +56,9 @@ CalPal understands the request and performs the action automatically on Google C
 
 To make calendar management fast, conversational, and accessible using AI.
 
----
 
 ## 📌 Status
 
 Core features working locally ✅  
-Improving prompt understanding & event matching 🔧
+Improved prompt understanding & event matching 🔧
+Working on listing schedule based on period of days/week/month 📅
