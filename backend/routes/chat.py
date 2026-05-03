@@ -16,7 +16,6 @@ users_collection = db['users']
 @router.post("/message")
 async def process_message(chat_msg: ChatMessage):
     try:
-        
         user = users_collection.find_one({'email': chat_msg.user_id})
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
@@ -24,14 +23,15 @@ async def process_message(chat_msg: ChatMessage):
         print(f"\n{'='*60}")
         print(f"📨 USER: {chat_msg.message}")
         
-        # Extract intent using Groq (now includes date, time, duration)
+        # Extract intent using Groq (now includes time_range)
         intent = await groq_service.extract_intent(chat_msg.message)
         action = intent.get("action")
         title = intent.get("title")
+        time_range = intent.get("time_range")
 
-        print(f"🎯 Action: {action}, Title: {title}")
+        print(f"🎯 Action: {action}, Title: {title}, Time Range: {time_range}")
 
-        # Use Groq-extracted date/time/duration; fall back to NLPExtractor for any missing fields
+        # Use Groq-extracted date/time/duration; fall back to NLPExtractor for missing fields
         nlp = NLPExtractor.extract_all(chat_msg.message)
 
         date = intent.get("date") or nlp["date"]
@@ -77,6 +77,23 @@ async def process_message(chat_msg: ChatMessage):
             cal.delete_event(ev['id'])
             return {"success": True, "message": f"🗑️ Deleted '{ev['summary']}'"}
 
+        elif action == 'delete_all':
+            # Delete all events with optional time range filter
+            count = cal.delete_all_events(time_range)
+            
+            if count == 0:
+                if time_range:
+                    msg = f"📭 No events found in {time_range.replace('_', ' ')}"
+                else:
+                    msg = "📭 No upcoming events to delete"
+            else:
+                if time_range:
+                    msg = f"🗑️ Deleted {count} event{'s' if count != 1 else ''} from {time_range.replace('_', ' ')}"
+                else:
+                    msg = f"🗑️ Deleted {count} event{'s' if count != 1 else ''}"
+            
+            return {"success": True, "message": msg}
+
         elif action == 'update':
             if not title:
                 return {"success": False, "message": "❌ Which event should I update?"}
@@ -118,15 +135,25 @@ async def process_message(chat_msg: ChatMessage):
             return {"success": True, "message": msg}
 
         elif action == 'list':
-            date_filter = date if date else None
-            events = cal.list_events(10, date_filter)
+            # List events with optional time range filter
+            events = cal.list_events(max_results=50, time_range=time_range)
             
             if not events:
-                return {"success": True, "message": "📭 No upcoming events"}
+                if time_range:
+                    msg = f"📭 No events in {time_range.replace('_', ' ')}"
+                else:
+                    msg = "📭 No upcoming events"
+                return {"success": True, "message": msg}
             
             lines = [f"{i+1}. {e['summary']} - {cal.format_time(e)}" 
                     for i, e in enumerate(events)]
-            msg = "📅 Upcoming events:\n\n" + "\n".join(lines)
+            
+            if time_range:
+                header = f"📅 Events in {time_range.replace('_', ' ')} ({len(events)} total):\n\n"
+            else:
+                header = f"📅 Upcoming events ({len(events)} total):\n\n"
+            
+            msg = header + "\n".join(lines)
             return {"success": True, "message": msg, "events": events}
 
         return {"success": False, "message": "🤔 Didn't understand that. Try: 'Add meeting tomorrow at 2pm'"}

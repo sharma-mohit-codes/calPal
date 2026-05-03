@@ -17,6 +17,62 @@ class CalendarService:
         self.service = build('calendar', 'v3', credentials=creds)
         self.tz = pytz.timezone('Asia/Kolkata')
     
+    def get_time_range_bounds(self, time_range: str) -> tuple:
+        """
+        Convert time_range string to (start_datetime, end_datetime)
+        
+        Returns tuple of (time_min, time_max) as ISO strings
+        """
+        now = datetime.now(self.tz)
+        
+        if time_range == "this_week":
+            # Monday of this week to Sunday
+            start = now - timedelta(days=now.weekday())
+            start = start.replace(hour=0, minute=0, second=0, microsecond=0)
+            end = start + timedelta(days=7)
+            
+        elif time_range == "next_week":
+            # Next Monday to next Sunday
+            days_to_monday = 7 - now.weekday()
+            start = now + timedelta(days=days_to_monday)
+            start = start.replace(hour=0, minute=0, second=0, microsecond=0)
+            end = start + timedelta(days=7)
+            
+        elif time_range == "this_month":
+            # First day of this month to last day
+            start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            if now.month == 12:
+                end = start.replace(year=now.year + 1, month=1)
+            else:
+                end = start.replace(month=now.month + 1)
+                
+        elif time_range == "next_month":
+            # First day of next month to last day of next month
+            if now.month == 12:
+                start = now.replace(year=now.year + 1, month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+                end = start.replace(month=2)
+            else:
+                start = now.replace(month=now.month + 1, day=1, hour=0, minute=0, second=0, microsecond=0)
+                if now.month == 11:
+                    end = start.replace(year=now.year + 1, month=1)
+                else:
+                    end = start.replace(month=now.month + 2)
+                    
+        elif time_range and time_range.startswith("next_") and time_range.endswith("_days"):
+            # Extract number of days
+            import re
+            match = re.search(r'next_(\d+)_days', time_range)
+            if match:
+                days = int(match.group(1))
+                start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                end = start + timedelta(days=days)
+            else:
+                return None, None
+        else:
+            return None, None
+        
+        return start.isoformat(), end.isoformat()
+    
     def parse_dt(self, date_str: str, time_str: str = None) -> datetime:
         """Parse date/time to datetime object"""
         now = datetime.now(self.tz)
@@ -24,7 +80,6 @@ class CalendarService:
         if not date_str:
             return now
         
-        # Handle YYYY-MM-DD format
         if isinstance(date_str, str) and len(date_str) == 10 and '-' in date_str:
             try:
                 dt = datetime.strptime(date_str, "%Y-%m-%d")
@@ -74,25 +129,38 @@ class CalendarService:
         print(f"📅 Creating: {title} | {start} → {end} ({duration}min)")
         return self.service.events().insert(calendarId='primary', body=event).execute()
     
-    def list_events(self, max_results: int = 10, date_filter: str = None, include_past: bool = False) -> list:
+    def list_events(self, max_results: int = 10, date_filter: str = None, include_past: bool = False, time_range: str = None) -> list:
         """
-        List events, optionally filtered by date
+        List events with optional time range filtering
         
         Args:
-            max_results: Maximum number of events to return
-            date_filter: Filter by specific date (today/tomorrow/YYYY-MM-DD)
-            include_past: If True, include past events from today
+            max_results: Maximum number of events
+            date_filter: Single date filter (legacy)
+            include_past: Include past events from today
+            time_range: Time range filter (this_week, this_month, etc.)
         """
         
-        # Determine time range
+        # If time_range specified, use it
+        if time_range:
+            time_min, time_max = self.get_time_range_bounds(time_range)
+            if time_min and time_max:
+                print(f"📅 Time range filter: {time_range} ({time_min} to {time_max})")
+                result = self.service.events().list(
+                    calendarId='primary',
+                    timeMin=time_min,
+                    timeMax=time_max,
+                    maxResults=max_results,
+                    singleEvents=True,
+                    orderBy='startTime'
+                ).execute()
+                return result.get('items', [])
+        
+        # Legacy date filter logic
         if include_past:
-            # Start from beginning of today
             time_min = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).isoformat() + 'Z'
         else:
-            # Start from now (future events only)
             time_min = datetime.utcnow().isoformat() + 'Z'
         
-        # If date filter provided, set specific day range
         if date_filter:
             try:
                 if date_filter == "today":
@@ -102,9 +170,7 @@ class CalendarService:
                 else:
                     filter_date = datetime.strptime(date_filter, "%Y-%m-%d")
                 
-                # Start of day
                 start_of_day = filter_date.replace(hour=0, minute=0, second=0, microsecond=0)
-                # End of day
                 end_of_day = filter_date.replace(hour=23, minute=59, second=59, microsecond=0)
                 
                 result = self.service.events().list(
@@ -116,7 +182,6 @@ class CalendarService:
                     orderBy='startTime'
                 ).execute()
             except:
-                # Fallback
                 result = self.service.events().list(
                     calendarId='primary',
                     timeMin=time_min,
@@ -136,12 +201,7 @@ class CalendarService:
         return result.get('items', [])
     
     def find_event(self, title: str, date_filter: str = None) -> dict:
-        """
-        Find event by title with improved matching
-        
-        Searches ALL events from today (including past) to avoid missing events
-        """
-        # Search from start of today to include past events
+        """Find event by title with improved matching"""
         events = self.list_events(100, date_filter, include_past=True)
         
         if not events:
@@ -149,7 +209,7 @@ class CalendarService:
             return None
         
         print(f"🔍 Searching '{title}' among {len(events)} events:")
-        for e in events[:10]:  # Show first 10 for debug
+        for e in events[:10]:
             print(f"   - {e.get('summary', 'Untitled')}")
         if len(events) > 10:
             print(f"   ... and {len(events) - 10} more")
@@ -161,20 +221,16 @@ class CalendarService:
         for e in events:
             et = e.get('summary', '').lower().strip()
             
-            # Exact match (case insensitive)
             if tl == et:
                 print(f"✅ Exact match: '{et}'")
                 return e
             
-            # Substring match (either direction)
             if tl in et or et in tl:
                 print(f"✅ Substring match: '{et}'")
                 return e
             
-            # Fuzzy similarity
             score = SequenceMatcher(None, tl, et).ratio()
             
-            # Bonus for partial word match
             title_words = set(tl.split())
             event_words = set(et.split())
             common_words = title_words & event_words
@@ -185,28 +241,49 @@ class CalendarService:
                 best_score = score
                 best = e
         
-        # Lower threshold for short titles
         threshold = 0.3 if len(tl) <= 5 else 0.4
         
         if best_score >= threshold:
             print(f"✅ Found match: '{best.get('summary')}' (score: {best_score:.2f})")
             return best
         
-        print(f"❌ No match found (best score: {best_score:.2f}, threshold: {threshold})")
+        print(f"❌ No match found (best score: {best_score:.2f})")
         return None
+    
+    def delete_all_events(self, time_range: str = None) -> int:
+        """
+        Delete all events, optionally filtered by time range
+        
+        Returns: Number of events deleted
+        """
+        if time_range:
+            events = self.list_events(max_results=500, time_range=time_range)
+            print(f"🗑️ Deleting all events in range: {time_range}")
+        else:
+            events = self.list_events(max_results=500)
+            print(f"🗑️ Deleting all upcoming events")
+        
+        count = 0
+        for event in events:
+            try:
+                self.service.events().delete(calendarId='primary', eventId=event['id']).execute()
+                print(f"   ✓ Deleted: {event.get('summary', 'Untitled')}")
+                count += 1
+            except Exception as e:
+                print(f"   ✗ Failed to delete: {event.get('summary', 'Untitled')} - {e}")
+        
+        return count
     
     def update_event(self, event_id: str, new_date: str = None, new_time: str = None, new_duration: int = None) -> dict:
         """Update event with support for date, time, and duration changes"""
         event = self.service.events().get(calendarId='primary', eventId=event_id).execute()
         
-        # Get current start and end times
         curr_start = datetime.fromisoformat(event['start']['dateTime'])
         curr_end = datetime.fromisoformat(event['end']['dateTime'])
-        current_duration = (curr_end - curr_start).total_seconds() / 60  # in minutes
+        current_duration = (curr_end - curr_start).total_seconds() / 60
         
         print(f"📝 Current: {curr_start} → {curr_end} ({current_duration:.0f}min)")
         
-        # Calculate new start time
         if new_date or new_time:
             new_start = self.parse_dt(
                 new_date or curr_start.strftime("%Y-%m-%d"),
@@ -215,17 +292,13 @@ class CalendarService:
         else:
             new_start = curr_start
         
-        # Calculate new end time
         if new_duration:
-            # User specified new duration
             new_end = new_start + timedelta(minutes=new_duration)
             print(f"✏️  Updated duration: {new_duration}min")
         else:
-            # Keep existing duration
             duration_to_use = current_duration
             new_end = new_start + timedelta(minutes=duration_to_use)
         
-        # Update event
         event['start']['dateTime'] = new_start.isoformat()
         event['end']['dateTime'] = new_end.isoformat()
         
