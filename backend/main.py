@@ -4,7 +4,7 @@ from routes import auth, chat
 from config import get_settings
 import os
 settings = get_settings()
-
+print("FRONTEND_URL =", settings.FRONTEND_URL)
 app = FastAPI(title="calPal API")
 
 # CORS middleware
